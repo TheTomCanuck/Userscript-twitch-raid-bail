@@ -2,7 +2,7 @@
 // @name         Raid Bail
 // @namespace    twitchraidbail.thetomcanuck.userscript
 // @author       TheTomCanuck
-// @version      1.0
+// @version      1.1
 // @description  auto-close twitch tabs when raided into unwanted channels
 // @match        https://www.twitch.tv/*
 // @match        https://twitch.tv/*
@@ -49,7 +49,31 @@
         return (MODE === 'blacklist' && inList) || (MODE === 'whitelist' && !inList);
     }
 
-    // watch network requests for HLS loads with a raid_id
+    function checkUrl() {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('referrer') !== 'raid') return;
+        const path = window.location.pathname.split('/').filter(Boolean);
+        if (path.length === 0) return;
+        if (shouldBail(path[0])) bail();
+    }
+
+    // re-check on every SPA navigation — Twitch uses History API, so a raid
+    // mid-session never triggers a real page load
+    const origPush = history.pushState;
+    const origReplace = history.replaceState;
+    history.pushState = function () {
+        const r = origPush.apply(this, arguments);
+        checkUrl();
+        return r;
+    };
+    history.replaceState = function () {
+        const r = origReplace.apply(this, arguments);
+        checkUrl();
+        return r;
+    };
+    window.addEventListener('popstate', checkUrl);
+
+    // backup: watch HLS requests for a raid_id, in case ?referrer=raid is missing
     const observer = new PerformanceObserver(list => {
         for (const entry of list.getEntries()) {
             if (entry.name.includes('raid_id')) {
@@ -59,15 +83,6 @@
         }
     });
     observer.observe({ type: 'resource', buffered: true });
-
-    // fallback for direct navigation to a raid url
-    function checkUrl() {
-        const params = new URLSearchParams(window.location.search);
-        if (params.get('referrer') !== 'raid') return;
-        const path = window.location.pathname.split('/').filter(Boolean);
-        if (path.length === 0) return;
-        if (shouldBail(path[0])) bail();
-    }
 
     checkUrl();
 })();
